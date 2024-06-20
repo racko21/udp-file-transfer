@@ -18,7 +18,7 @@ const (
 	PACKET_SIZE    = PAYLOAD_LENGTH + 6
 	WINDOW_SIZE    = 8
 	ACK_SIZE       = 6
-	TIMEOUT        = 100 * time.Millisecond
+	TIMEOUT        = 100 * time.Nanosecond
 )
 
 func sendFile(filePath, ip string, port int) {
@@ -46,6 +46,10 @@ func sendFile(filePath, ip string, port int) {
 		maxSequenceNumber += 2
 	}
 
+	var start time.Time
+
+	fmt.Printf("sending file: %s to %s\n", filePath, ip)
+
 	zeroPacket := make([]byte, 10+len(filePath))
 	binary.BigEndian.PutUint16(zeroPacket[0:2], transmissionID)
 	binary.BigEndian.PutUint32(zeroPacket[2:6], sequenceNumber)
@@ -54,6 +58,7 @@ func sendFile(filePath, ip string, port int) {
 
 	for {
 		conn.Write(zeroPacket)
+		start = time.Now()
 		ack := make([]byte, ACK_SIZE)
 		conn.SetReadDeadline(time.Now().Add(TIMEOUT))
 		_, err := conn.Read(ack)
@@ -61,7 +66,7 @@ func sendFile(filePath, ip string, port int) {
 			ackTransmissionID := binary.BigEndian.Uint16(ack[0:2])
 			ackSequenceNumber := binary.BigEndian.Uint32(ack[2:6])
 			if ackTransmissionID == transmissionID && ackSequenceNumber == sequenceNumber {
-				fmt.Printf("Ack: %d\n", ackSequenceNumber)
+				// fmt.Printf("Ack: %d\n", ackSequenceNumber)
 				break
 			}
 		}
@@ -100,7 +105,7 @@ func sendFile(filePath, ip string, port int) {
 				copy(packet[6:], data[:])
 				packets[sequenceNumber] = packet
 				conn.Write(packet)
-				fmt.Printf("Sent: %d\n", sequenceNumber)
+				// fmt.Printf("Sent: %d\n", sequenceNumber)
 				sequenceNumber++
 			}
 			lock.Unlock()
@@ -117,7 +122,7 @@ func sendFile(filePath, ip string, port int) {
 			if err == nil {
 				ackTransmissionID := binary.BigEndian.Uint16(ack[0:2])
 				ackSequenceNumber := binary.BigEndian.Uint32(ack[2:6])
-				fmt.Printf("Ack: %d\n", ackSequenceNumber)
+				// fmt.Printf("Ack: %d\n", ackSequenceNumber)
 				if ackTransmissionID == transmissionID {
 					lock.Lock()
 					if !acked[ackSequenceNumber] {
@@ -134,7 +139,7 @@ func sendFile(filePath, ip string, port int) {
 				for seq := base; seq < sequenceNumber; seq++ {
 					if !acked[seq] {
 						conn.Write(packets[seq])
-						fmt.Printf("Resent: %d\n", seq)
+						// fmt.Printf("Resent: %d\n", seq)
 					}
 				}
 				lock.Unlock()
@@ -154,7 +159,7 @@ func sendFile(filePath, ip string, port int) {
 	copy(finalPacket[6:], fileMd5)
 	for {
 		conn.Write(finalPacket)
-		fmt.Printf("Sent final packet: %d\n", sequenceNumber)
+		// fmt.Printf("Sent final packet: %d\n", sequenceNumber)
 		ack := make([]byte, ACK_SIZE)
 		conn.SetReadDeadline(time.Now().Add(TIMEOUT))
 		_, err := conn.Read(ack)
@@ -162,11 +167,18 @@ func sendFile(filePath, ip string, port int) {
 			ackTransmissionID := binary.BigEndian.Uint16(ack[0:2])
 			ackSequenceNumber := binary.BigEndian.Uint32(ack[2:6])
 			if ackTransmissionID == transmissionID && ackSequenceNumber == sequenceNumber {
-				fmt.Printf("Received final ack: %d\n", ackSequenceNumber)
+				// fmt.Printf("Received final ack: %d\n", ackSequenceNumber)
 				break
 			}
 		}
 	}
+
+	elapsed := int(time.Since(start)) / 1000000
+	fmt.Println("transmission succesfull")
+	fmt.Println()
+
+	rate := fileSize / int64(elapsed)
+	fmt.Printf("Average Datarate: %v kb/s\n", rate)
 }
 
 func calculateMD5(filePath string) []byte {

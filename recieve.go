@@ -41,6 +41,7 @@ func receiveFile(port int) {
 	receivedData := make(map[uint32][]byte)
 
 	fmt.Printf("Listening on port %d...\n", port)
+	fmt.Println()
 
 	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	for {
@@ -55,7 +56,8 @@ func receiveFile(port int) {
 			maxSequenceNumber = binary.BigEndian.Uint32(buffer[6:10])
 			fileName = string(buffer[10:n])
 			fmt.Printf("Receiving file: %s\n", fileName)
-			fmt.Printf("sequenceNumber: %v\n", sequenceNumber)
+			fmt.Println()
+			// fmt.Printf("sequenceNumber: %v\n", sequenceNumber)
 			ackPacket := make([]byte, 6)
 			binary.BigEndian.PutUint16(ackPacket[0:2], transmissionID)
 			binary.BigEndian.PutUint32(ackPacket[2:6], sequenceNumber)
@@ -76,7 +78,7 @@ func receiveFile(port int) {
 		}
 		transmissionID = binary.BigEndian.Uint16(buffer[0:2])
 		sequenceNumber = binary.BigEndian.Uint32(buffer[2:6])
-		fmt.Printf("sequenceNumber: %v\n", sequenceNumber)
+		// fmt.Printf("sequenceNumber: %v\n", sequenceNumber)
 
 		if transmissionID != TRANSMISSIONID {
 			continue
@@ -109,6 +111,8 @@ func receiveFile(port int) {
 		file.Write(receivedData[i])
 	}
 
+	println("File received, verifying integrity...")
+
 	verifyFileIntegrity(fileName, fileMd5)
 }
 
@@ -124,8 +128,6 @@ func verifyFileIntegrity(filePath string, originalMd5 []byte) {
 		panic(err)
 	}
 	md5 := hash.Sum(nil)
-	fmt.Println(md5)
-	fmt.Println(originalMd5)
 
 	if bytes.Equal(md5, originalMd5) {
 		fmt.Println("File integrity verified successfully.")

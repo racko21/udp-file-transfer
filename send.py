@@ -10,12 +10,12 @@ PAYLOAD_LENGTH = 1024
 PACKET_SIZE = PAYLOAD_LENGTH + 16 + 32
 WINDOW_SIZE = 8
 ACK_SIZE = 6
-TIMEOUT = 5
+TIMEOUT = 1
 
 
 def send_file(file_path, ip, port):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.settimeout(1)
+    sock.settimeout(TIMEOUT)
 
     transmission_id = int.from_bytes(os.urandom(2), "big")
     file_size = os.path.getsize(file_path)
@@ -23,6 +23,7 @@ def send_file(file_path, ip, port):
     max_sequence_number = (
         file_size // PAYLOAD_LENGTH + ((file_size % PAYLOAD_LENGTH) != 0) + 1
     )
+    end = None
 
     # Send initial packet with file name and max sequence number
     sequence_number = 0
@@ -30,8 +31,13 @@ def send_file(file_path, ip, port):
         struct.pack("!HII", transmission_id, sequence_number, max_sequence_number)
         + file_name
     )
+
+    print("")
+    print(f"sending file: {file_path} to {ip}")
+
     while True:
         sock.sendto(zero_packet, (ip, port))
+        start = time.time()
         try:
             ack, _ = sock.recvfrom(ACK_SIZE)
             ack_transmission_id, ack_sequence_number = struct.unpack("!HI", ack[:6])
@@ -39,7 +45,7 @@ def send_file(file_path, ip, port):
                 ack_transmission_id == transmission_id
                 and ack_sequence_number == sequence_number
             ):
-                print(f"ack: {ack_sequence_number}")
+                # print(f"ack: {ack_sequence_number}")
                 break
         except socket.timeout:
             continue
@@ -69,9 +75,10 @@ def send_file(file_path, ip, port):
                         )
                         packets[sequence_number] = packet
                         sock.sendto(packet, (ip, port))
+                        # print(f"sent: {sequence_number}")
                         sequence_number += 1
                 with locked:
-                    locked.wait(timeout=3)
+                    locked.wait(timeout=1)
 
     def receive_acks():
         nonlocal base
@@ -87,6 +94,7 @@ def send_file(file_path, ip, port):
                     ack_transmission_id, ack_sequence_number = struct.unpack(
                         "!HI", ack[:6]
                     )
+                    # print(f"ack: {ack_sequence_number}")
                     if ack_transmission_id == transmission_id:
                         with lock:
                             if not acked[ack_sequence_number]:
@@ -107,6 +115,10 @@ def send_file(file_path, ip, port):
     ack_thread.start()
     send_thread.join()
     ack_thread.join()
+    end = time.time()
+
+    print("Filetransfer succesfull")
+    print("")
 
     # Send final packet with MD5 checksum
     md5_checksum = calculate_md5(file_path)
@@ -124,6 +136,10 @@ def send_file(file_path, ip, port):
         except socket.timeout:
             continue
 
+    duration = end - start
+    rate = int(file_size / 1024 / duration)
+    print(f"Average Datarate: {rate} kb/s")
+
     sock.close()
 
 
@@ -132,7 +148,6 @@ def calculate_md5(file_path):
     with open(file_path, "rb") as f:
         for chunk in iter(lambda: f.read(4096), b""):
             md5.update(chunk)
-    print(md5.hexdigest())
     return md5.digest()
 
 
